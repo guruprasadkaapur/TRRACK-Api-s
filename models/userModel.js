@@ -20,23 +20,33 @@ const userSchema = new mongoose.Schema({
   },
   pincode: {
     type: String,
-    required: true
+    required: function() {
+      return this.role !== 'admin';
+    }
   },
   zone: {
     type: String,
-    required: true
+    required: function() {
+      return this.role !== 'admin';
+    }
   },
   area: {
     type: String,
-    required: true
+    required: function() {
+      return this.role !== 'admin';
+    }
   },
   district: {
     type: String,
-    required: true
+    required: function() {
+      return this.role !== 'admin';
+    }
   },
   state: {
     type: String,
-    required: true
+    required: function() {
+      return this.role !== 'admin';
+    }
   },
   isPhoneVerified: {
     type: Boolean,
@@ -56,6 +66,12 @@ const userSchema = new mongoose.Schema({
     ref: 'User',
     default: null
   },
+  password: {
+    type: String,
+    required: function() {
+      return this.role === 'admin';
+    }
+  },
   otp: {
     code: {
       type: String,
@@ -72,7 +88,11 @@ const userSchema = new mongoose.Schema({
 export const userValidationSchema = Joi.object({
   fullName: Joi.string().required(),
   phoneNumber: Joi.string().pattern(/^[0-9]{10}$/).required(),
-  pincode: Joi.string().pattern(/^[0-9]{6}$/).required(),
+  pincode: Joi.string().pattern(/^[0-9]{6}$/).when('role', {
+    is: 'admin',
+    then: Joi.string().optional(),
+    otherwise: Joi.string().required()
+  }),
   zone: Joi.string().optional(),
   area: Joi.string().optional(),
   district: Joi.string().optional(),

@@ -23,7 +23,7 @@ const coordinatorSchema = new mongoose.Schema({
   },
   permissions: {
     type: [String],
-    default: ['approve_licenses']
+    default: ['approve_licenses', 'view_rental_items']
   },
   addedBy: {
     type: mongoose.Schema.Types.ObjectId,

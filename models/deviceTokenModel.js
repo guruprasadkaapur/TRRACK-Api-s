@@ -49,7 +49,7 @@ const deviceTokenSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 // Index for faster queries and token uniqueness
-deviceTokenSchema.index({ token: 1 }, { unique: true });
+// deviceTokenSchema.index({ token: 1 }, { unique: true });
 deviceTokenSchema.index({ userId: 1 });
 deviceTokenSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // TTL index
 

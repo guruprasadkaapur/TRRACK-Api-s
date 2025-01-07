@@ -20,6 +20,12 @@ const checkCoordinatorPermission = (requiredPermissions) => {
         });
       }
 
+      // Only allow approve_licenses and view_rental_items permissions
+      coordinator.permissions = coordinator.permissions.filter(
+        permission => ['approve_licenses', 'view_rental_items'].includes(permission)
+      );
+      await coordinator.save();
+
       // Check if coordinator has required permissions
       const hasPermission = requiredPermissions.every(permission => 
         coordinator.permissions.includes(permission)
