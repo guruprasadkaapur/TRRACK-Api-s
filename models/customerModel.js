@@ -9,19 +9,17 @@ const customerSchema = new mongoose.Schema({
   },
   fullName: {
     type: String,
-    required: true,
-    trim: true
+    required: true
   },
   phoneNumber: {
     type: String,
     required: true,
-    match: /^[0-9]{10}$/
+    unique: true
   },
   email: {
     type: String,
     required: true,
-    lowercase: true,
-    match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    unique: true
   },
   address: {
     type: String,
@@ -31,7 +29,7 @@ const customerSchema = new mongoose.Schema({
     type: {
       type: String,
       required: true,
-      enum: ['AADHAAR', 'VOTER_ID', 'DRIVING_LICENSE']
+      enum: ['AADHAAR', 'DRIVING_LICENSE', 'PASSPORT']
     },
     number: {
       type: String,
@@ -42,21 +40,18 @@ const customerSchema = new mongoose.Schema({
       default: false
     }
   },
-  remarks: String,
   rentedItems: [{
     itemId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'RentalItem'
+      ref: 'RentalItem',
+      required: true
     },
-    rentalDuration: {
-      type: Number,
-      required: true,
-      min: 1
+    rentalPrice: {
+      amount: Number,
+      duration: String
     },
-    startDate: {
-      type: Date,
-      default: Date.now
-    },
+    rentalDuration: Number,
+    startDate: Date,
     returnDate: Date,
     deposit: Number,
     status: {
@@ -64,9 +59,10 @@ const customerSchema = new mongoose.Schema({
       enum: ['active', 'returned', 'overdue'],
       default: 'active'
     },
-    rentalPrice: {
-      amount: Number,
-      duration: String
+    condition: {
+      type: String,
+      enum: ['good', 'damaged', 'lost'],
+      default: 'good'
     }
   }],
   activeRentals: {
@@ -77,10 +73,27 @@ const customerSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  createdAt: {
-    type: Date,
-    default: Date.now
-  }
+  customerStatus: {
+    type: String,
+    enum: ['good', 'warning', 'bad'],
+    default: 'good'
+  },
+  statusHistory: [{
+    status: {
+      type: String,
+      enum: ['good', 'warning', 'bad']
+    },
+    reason: String,
+    date: {
+      type: Date,
+      default: Date.now
+    },
+    reportedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    }
+  }],
+  remarks: String
 }, {
   timestamps: true
 });
@@ -93,7 +106,7 @@ export const customerValidationSchema = Joi.object({
   email: Joi.string().email().required(),
   address: Joi.string().required().min(10),
   idProof: Joi.object({
-    type: Joi.string().valid('AADHAAR', 'VOTER_ID', 'DRIVING_LICENSE').required(),
+    type: Joi.string().valid('AADHAAR', 'DRIVING_LICENSE', 'PASSPORT').required(),
     number: Joi.string().required()
   }).required(),
   remarks: Joi.string().allow('', null)
@@ -102,8 +115,8 @@ export const customerValidationSchema = Joi.object({
 // Format validation for different ID types
 const ID_FORMATS = {
   AADHAAR: /^\d{12}$/,
-  VOTER_ID: /^[A-Z]{3}\d{7}$/,
-  DRIVING_LICENSE: /^[A-Z]{2}\d{13}$/
+  DRIVING_LICENSE: /^[A-Z]{2}\d{13}$/,
+  PASSPORT: /^[A-Z]{1}\d{7}$/
 };
 
 // Middleware to validate ID proof format

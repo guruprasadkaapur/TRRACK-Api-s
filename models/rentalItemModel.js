@@ -37,29 +37,76 @@ const rentalItemSchema = new mongoose.Schema({
     enum: ['available', 'not available'],
     default: 'available'
   },
-  imageUrls: [{
-    type: String,
-    validate: {
-      validator: function(url) {
-        return /^(http|https):\/\/[^ "]+$/.test(url);
+  currentRental: {
+    customerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Customer'
+    },
+    startDate: Date,
+    endDate: Date,
+    deposit: Number,
+    totalAmount: Number,
+    returnDetails: {
+      returnDate: Date,
+      condition: {
+        type: String,
+        enum: ['excellent', 'good', 'damaged']
       },
-      message: 'Invalid image URL format'
+      comments: String,
+      additionalCharges: {
+        amount: Number,
+        reason: String
+      }
     }
+  },
+  rentalHistory: [{
+    customerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Customer'
+    },
+    startDate: Date,
+    endDate: Date,
+    deposit: Number,
+    totalAmount: Number,
+    returnDetails: {
+      returnDate: Date,
+      condition: {
+        type: String,
+        enum: ['excellent', 'good', 'damaged']
+      },
+      comments: String,
+      additionalCharges: {
+        amount: Number,
+        reason: String
+      }
+    },
+    status: {
+      type: String,
+      enum: ['completed', 'cancelled'],
+      required: true
+    }
+  }],
+  images: [{
+    path: String,
+    filename: String
   }],
   location: {
     pincode: String,
-    zone: String,
-    area: String,
-    district: String,
-    state: String
-  },
-  approvedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Coordinator',
-    default: null
+    zone: String
   }
-}, {
-  timestamps: true
 });
+
+// When a rental is completed, add it to history
+rentalItemSchema.methods.completeRental = async function() {
+  if (this.currentRental) {
+    this.rentalHistory.push({
+      ...this.currentRental,
+      status: 'completed'
+    });
+    this.currentRental = null;
+    this.availabilityStatus = 'available';
+    await this.save();
+  }
+};
 
 export default mongoose.model('RentalItem', rentalItemSchema);

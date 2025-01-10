@@ -2,8 +2,22 @@ import express from 'express';
 import Customer, { customerValidationSchema } from '../models/customerModel.js';
 import RentalItem from '../models/rentalItemModel.js';
 import checkLicense from '../middleware/licenseCheckMiddleware.js';
+import jwt from 'jsonwebtoken';
 
 const router = express.Router();
+
+// Get all customers
+router.get('/', async (req, res) => {
+  try {
+    const customers = await Customer.find()
+      .select('-__v')
+      .sort('-createdAt');
+
+    res.json(customers);
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching customers', error: error.message });
+  }
+});
 
 // Add new customer (No license check needed)
 router.post('/', async (req, res) => {
@@ -225,7 +239,7 @@ router.post('/:customerId/return-item', async (req, res) => {
 
     // Update rental status
     customer.rentedItems[rentalIndex].status = 'returned';
-    customer.activeRentals -= 1;
+    customer.activeRentals = customer.rentedItems.filter(rental => rental.status === 'active').length;
 
     // Update item availability
     rentalItem.availabilityStatus = 'available';
@@ -280,9 +294,12 @@ router.get('/:customerId/rental-history', async (req, res) => {
       return res.status(404).json({ message: 'Customer not found' });
     }
 
+    const activeRentals = customer.rentedItems.filter(rental => rental.status === 'active').length;
+
     res.json({
       rentalHistory: customer.rentedItems,
-      totalRentals: customer.rentedItems.length
+      totalRentals: customer.rentedItems.length,
+      activeRentals: activeRentals
     });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching rental history', error: error.message });
@@ -396,6 +413,155 @@ router.get('/active-rentals', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: 'Error fetching active rentals', error: error.message });
+  }
+});
+
+// Get rental status summary for all customers
+router.get('/rental-status/all', async (req, res) => {
+  try {
+    const customers = await Customer.find()
+      .populate('rentedItems.itemId')
+      .select('fullName rentedItems');
+
+    // Initialize status counters
+    const rentalStatus = {
+      active: [],
+      returned: [],
+      overdue: [],
+      total: 0
+    };
+
+    // Current date for overdue check
+    const currentDate = new Date();
+
+    // Process rentals for all customers
+    customers.forEach(customer => {
+      customer.rentedItems.forEach(rental => {
+        const returnDate = new Date(rental.returnDate);
+        const rentalInfo = {
+          customerName: customer.fullName,
+          customerId: customer._id,
+          itemName: rental.itemId.itemName,
+          itemId: rental.itemId._id,
+          startDate: rental.startDate,
+          returnDate: rental.returnDate,
+          rentalDuration: rental.rentalDuration,
+          deposit: rental.deposit,
+          rentalPrice: rental.rentalPrice
+        };
+        
+        // Check if rental is overdue (if active and past return date)
+        if (rental.status === 'active' && returnDate < currentDate) {
+          rental.status = 'overdue';
+          rentalStatus.overdue.push(rentalInfo);
+        } else if (rental.status === 'active') {
+          rentalStatus.active.push(rentalInfo);
+        } else if (rental.status === 'returned') {
+          rentalStatus.returned.push(rentalInfo);
+        }
+      });
+      rentalStatus.total += customer.rentedItems.length;
+    });
+
+    // Create summary
+    const summary = {
+      totalRentals: rentalStatus.total,
+      activeRentals: rentalStatus.active.length,
+      returnedRentals: rentalStatus.returned.length,
+      overdueRentals: rentalStatus.overdue.length,
+      details: {
+        active: rentalStatus.active,
+        returned: rentalStatus.returned,
+        overdue: rentalStatus.overdue
+      }
+    };
+
+    res.json({
+      message: 'Overall rental status retrieved successfully',
+      summary: summary
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching overall rental status', error: error.message });
+  }
+});
+
+// Update customer status
+router.post('/:customerId/status', async (req, res) => {
+  try {
+    const { status, reason } = req.body;
+    const customerId = req.params.customerId;
+    
+    // Get user ID from token
+    const token = req.headers.authorization.split(' ')[1];
+    const decoded = jwt.verify(token, 'your-secret-key'); // Using the same secret as in auth
+    const reportedBy = decoded.userId;
+
+    // Validate status
+    if (!['good', 'warning', 'bad'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status. Must be good, warning, or bad' });
+    }
+
+    // Find customer
+    const customer = await Customer.findById(customerId);
+    if (!customer) {
+      return res.status(404).json({ message: 'Customer not found' });
+    }
+
+    // Update customer status
+    customer.customerStatus = status;
+    customer.statusHistory.push({
+      status,
+      reason,
+      date: new Date(),
+      reportedBy
+    });
+
+    await customer.save();
+
+    res.json({
+      message: 'Customer status updated successfully',
+      customerStatus: customer.customerStatus,
+      statusHistory: customer.statusHistory
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error updating customer status', error: error.message });
+  }
+});
+
+// Get all bad customers
+router.get('/status/bad', async (req, res) => {
+  try {
+    const badCustomers = await Customer.find({ customerStatus: 'bad' })
+      .populate('statusHistory.reportedBy', 'fullName email')
+      .select('fullName phoneNumber email customerStatus statusHistory rentedItems');
+
+    const customerDetails = badCustomers.map(customer => ({
+      customerId: customer._id,
+      fullName: customer.fullName,
+      phoneNumber: customer.phoneNumber,
+      email: customer.email,
+      currentStatus: customer.customerStatus,
+      statusHistory: customer.statusHistory.map(history => ({
+        status: history.status,
+        reason: history.reason,
+        date: history.date,
+        reportedBy: history.reportedBy ? {
+          fullName: history.reportedBy.fullName,
+          email: history.reportedBy.email
+        } : null
+      })),
+      activeRentals: customer.rentedItems.filter(item => item.status === 'active').length,
+      overdueRentals: customer.rentedItems.filter(item => item.status === 'overdue').length,
+      damagedItems: customer.rentedItems.filter(item => item.condition === 'damaged').length
+    }));
+
+    res.json({
+      message: 'Bad customers retrieved successfully',
+      count: customerDetails.length,
+      customers: customerDetails
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Error fetching bad customers', error: error.message });
   }
 });
 
